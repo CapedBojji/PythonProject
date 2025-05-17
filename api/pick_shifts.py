@@ -195,7 +195,7 @@ def __validate_pick_shift_response(response: dict, shift: dict) -> bool:
     :param shift: The shift that was picked.
     :return: True if the response data is valid, False otherwise.
     """
-    if not "data" in response and "addShift" in response["data"]:
+    if not "data" in response and not "addShift" in response["data"]:
         return False
     return response["data"]["addShift"] == shift["id"]
 
