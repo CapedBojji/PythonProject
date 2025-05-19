@@ -1,6 +1,8 @@
 import http.cookies
 import logging
+from http.cookiejar import CookieJar, Cookie
 
+import httpx
 import requests
 from requests.cookies import RequestsCookieJar, create_cookie
 
@@ -23,13 +25,41 @@ def create_session(selenium_cookie_list: list[dict]) -> requests.Session:
         session.cookies.set_cookie(create_cookie(**fixed_cookie))
     return session
 
-def log_response_error(response: requests.Response, message: str, *args) -> bool:
+def create_httpx_async_client(selenium_cookie_list: list[dict]) -> httpx.AsyncClient:
     """
-    Log the error response.
+    Create an httpx async client with the given cookies.
 
-    :param response: The response object.
+    :param selenium_cookie_list : list[dict]
+            - A list of dictionaries, each representing a cookie;
+            - With required keys - "name" and "value";
+            - Optional keys - "path", "domain", "secure", "httpOnly", "expiry", "sameSite"
+    :return: An httpx async client with the cookies set.
     """
-    if response.status_code != 200:
-        logging.error(message, *args)
-        return True
-    return False
+    cookie_jar = selenium_cookies_to_cookiejar(selenium_cookie_list)
+    return httpx.AsyncClient(cookies=cookie_jar)
+
+
+def selenium_cookies_to_cookiejar(selenium_cookies):
+    jar = CookieJar()
+    for c in selenium_cookies:
+        cookie = Cookie(
+            version=0,
+            name=c['name'],
+            value=c['value'],
+            port=None,
+            port_specified=False,
+            domain=c.get('domain', ''),
+            domain_specified=bool(c.get('domain')),
+            domain_initial_dot=c.get('domain', '').startswith('.'),
+            path=c.get('path', '/'),
+            path_specified=True,
+            secure=c.get('secure', False),
+            expires=c.get('expiry'),  # None if not present
+            discard=False,
+            comment=None,
+            comment_url=None,
+            rest={},  # Could include 'HttpOnly': None
+            rfc2109=False,
+        )
+        jar.set_cookie(cookie)
+    return jar

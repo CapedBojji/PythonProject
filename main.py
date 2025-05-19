@@ -1,8 +1,9 @@
 import argparse
-import datetime
+import asyncio
 import logging
 import sys
 import time
+from asyncio import TaskGroup
 from pathlib import Path
 
 
@@ -13,6 +14,9 @@ from utils.logger import setup_logging
 from utils.watcher import Watcher, load_config
 
 
+import dotenv
+
+dotenv.load_dotenv()
 def on_user_config_change(data: UserConfig) -> None:
     session = get_user_session(data)
     session.update_config(data)
@@ -27,7 +31,7 @@ def on_user_config_create(data: UserConfig) -> None:
     create_user_session(data)
 
 
-def start(config_dir: Path, log_file: Path | None = None, debug: bool = False, show_browser=False) -> None:
+async def start(config_dir: Path, log_file: Path | None = None, debug: bool = False, show_browser=False) -> None:
     """
     Start the application with the given configuration directory.
     :param config_dir: The path to the configuration directory.
@@ -53,14 +57,14 @@ def start(config_dir: Path, log_file: Path | None = None, debug: bool = False, s
     try:
         while True:
             time.sleep(10)
-            authenticated_sessions = authenticate_all_sessions(show_browser)
-            for session in authenticated_sessions:
-                try:
-                    logging.debug(f"Authenticated session: {session}")
-                    pick_shifts.run(session)
-                except Exception as e:
-                    logging.error(f"Error in session {session}: {e}")
-                    # delete_user_session(session)
+            authenticated_sessions = await authenticate_all_sessions(show_browser)
+            authenticated_sessions.sort(key = lambda x: x.get_config().priority, reverse=True)
+            try:
+                async with TaskGroup() as group:
+                    for session in authenticated_sessions:
+                        group.create_task(pick_shifts.run(session))
+            except Exception as e:
+                logging.error(f"Error in TaskGroup: {e}")
     except KeyboardInterrupt:
         watcher.stop()
     except Exception as e:
@@ -124,4 +128,4 @@ if __name__ == "__main__":
         help="Enable debug mode.",
     )
     args = parser.parse_args()
-    start(args.config_dir, args.log_file, args.debug, args.show_browser)
+    asyncio.run(start(args.config_dir, args.log_file, args.debug, args.show_browser))

@@ -1,20 +1,24 @@
+import asyncio
 import logging
 import re
 import time
+from asyncio import TaskGroup
 from typing import Optional
 
 import requests
+from httpx import AsyncClient
 from selenium.webdriver.common.by import By
 
 from app.models import UserConfig, obfuscate_2fa_method, TwoFAMethod
 from two_factor.outlook import authenticate, get_2fa_code
 from utils.browser import BrowserFirefox, get_2fa_options
-from utils.session import create_session, log_response_error
+from utils.session import create_httpx_async_client
 
 
 class UserSession:
     def __init__(self, config: UserConfig):
-        self.__session = requests.Session()
+        self.__client = AsyncClient()
+        self.__session = None
         self.__employee_id: Optional[int] = None
         self.__config = config
 
@@ -38,7 +42,8 @@ class UserSession:
             raise ValueError("Cannot change username in session")
         if self.__should_re_login(config):
             # Re-authenticate if the configuration has changed
-            self.__session = requests.Session()
+            # self.__session = requests.Session()
+            self.__client = AsyncClient()
             self.__employee_id = None
         self.__config = config
         logging.debug("User session config updated: %s", self.__config)
@@ -50,54 +55,49 @@ class UserSession:
         return self.__config.username != new_config.username or self.__config.password != new_config.password or self.__config.two_factor_method[0] != new_config.two_factor_method[0] or \
             self.__config.two_factor_method[1] != new_config.two_factor_method[1]
 
-    def get_employee_id(self) -> int | None:
+    async def get_employee_id(self) -> int | None:
         """
         Get the employee ID from the session.
         """
         if self.__employee_id is None:
             # Fetch the employee ID from the session
             url = "https://atoz.amazon.work/shifts"
-            response = self.__session.get(url)
-            if log_response_error(response, "Failed to get employee ID: %s - %s for user session %s", response.status_code, response.text, self):
+
+            response = await self.__client.get(url)
+            if response.status_code != 200:
+                logging.error("Failed to get employee ID from session")
                 return None
+
             text = response.text
             pattern = re.compile(r"""(?<=['\"]employeeId['\"]:['\"])\d{9}(?=['\"])""")
             match = pattern.search(text)
             if match is None:
                 logging.error(f"Employee ID not found in response for user session {self}")
                 return None
+
             self.__employee_id = int(match.group())
+
         return self.__employee_id
 
-    def authenticate(self, show_browser=False) -> bool:
+    async def authenticate(self, show_browser=False) -> bool:
         """
         Authenticate the user session.
         """
         if self.__is_session_valid() and not self.__is_session_expired():
             return True
         elif self.__is_session_valid() and self.__is_session_expired():
-            return self.__re_authenticate()
+            return await self.__re_authenticate()
         else:
             browser = BrowserFirefox(binary_path=r"C:\Users\Floch\Downloads\geckodriver\geckodriver.exe", headless=not show_browser)
-            # Start the browser
-            try:
-                browser.start()
-            except Exception as e:
-                logging.error(f"Failed to start browser: {e}")
-                browser.stop()
-                return False
             # Perform the login process
             try:
-                self.__login(browser)
+                cookies = await asyncio.to_thread(self.__login, browser)
             except Exception as e:
                 logging.error(f"Failed to login: {e}")
                 browser.stop()
                 return False
-            # Get the cookies from the browser
-            cookies = browser.get_cookies()
-            browser.stop()
             # Create a new session with the cookies
-            self.__session = create_session(selenium_cookie_list=cookies)
+            self.__client = create_httpx_async_client(selenium_cookie_list=cookies)
             # Check if the session is valid
             return self.__is_session_valid()
 
@@ -105,7 +105,8 @@ class UserSession:
         """
         Check if the session is valid.
         """
-        cookies = self.__session.cookies
+        cookies = self.__client.cookies
+        cookies.get("atoz-oauth-token")
         if not cookies:
             return False
         # Check if the session has correct cookies
@@ -118,13 +119,13 @@ class UserSession:
         """
         Check if the session is expired.
         """
-        expiration_time = self.__session.cookies.get("refresh_session_expiration")
+        expiration_time = self.__client.cookies.get("refresh_session_expiration")
         if expiration_time is None:
             return True
         current_time = time.time()
         return current_time + 60 > int(expiration_time)
 
-    def logout(self) -> None:
+    async def logout(self) -> None:
         """
         Logout the user session.
         """
@@ -133,7 +134,7 @@ class UserSession:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3",
         }
-        response = self.__session.get(url, headers=headers)
+        response = await self.__client.get(url, headers=headers)
         if response.status_code != 200:
             logging.error(f"Failed to logout: {response.status_code} - {response.text}")
 
@@ -145,7 +146,7 @@ class UserSession:
         """
         return f"UserSession(username={self.__config.username}, employee_id={self.__employee_id})"
 
-    def __re_authenticate(self) -> bool:
+    async def __re_authenticate(self) -> bool:
         """
         Re-authenticate the user session.
         """
@@ -157,15 +158,17 @@ class UserSession:
             "anti-csrftoken-a2z-request": "true",
         }
         # Send the request to get the CSRF token
-        response = self.__session.get(url, headers=headers)
-        if log_response_error(response, "Failed to get CSRF token: %s - %s for user session %s", response.status_code, response.text, self):
+        response = await self.__client.get(url, headers=headers)
+        if response.status_code != 200:
+            logging.error(f"Failed to get CSRF token: {response.status_code} - {response.text}")
+            await self.logout()
             return False
 
         # Extract CSRF token from header
         csrf_token = response.headers.get("anti-csrftoken-a2z")
         if not csrf_token:
             logging.error(f"CSRF token not found in response headers for user session {self}")
-            self.logout()
+            await self.logout()
             return False
         # Build the URL and headers for the refresh access token request
         url = "https://atoz-login.amazon.work/refresh_access_token"
@@ -174,10 +177,14 @@ class UserSession:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3",
         }
         # Send the request to refresh the access token
-        response = self.__session.post(url, headers=headers)
-        return log_response_error(response, "Failed to refresh access token: %s - %s for user session %s", response.status_code, response.text, self)
+        response = await self.__client.post(url, headers=headers)
+        if response.status_code != 200:
+            logging.error(f"Failed to refresh access token: {response.status_code} - {response.text}")
+            await self.logout()
+            return False
 
-    def __login(self, browser: BrowserFirefox):
+        return True
+    def __login(self, browser: BrowserFirefox) -> list:
         logging.debug("Performing login for user session %s", self)
         """
         Perform the login process.
@@ -185,6 +192,7 @@ class UserSession:
         This method should handle the actual login logic, including
         entering the username and password, and handling two-factor authentication.
         """
+        browser.start()
         # Open the login page
         browser.get_url("https://atoz-login.amazon.work/")
         # Enter username
@@ -209,6 +217,21 @@ class UserSession:
         browser.find_element(By.ID, "buttonVerifyIdentity").click()
         # Ensure that the login was successful
         browser.wait_for_url(r"/shifts", timeout=30)
+        # Get the cookies from the browser
+        cookies = browser.get_cookies()
+        # Stop the browser
+        browser.stop()
+        # Return the cookies
+        if not cookies:
+            logging.error("No cookies found after login")
+            raise RuntimeError("No cookies found after login")
+        return cookies
+
+    def get_client(self) -> AsyncClient:
+        """
+        Get the HTTPX async client.
+        """
+        return self.__client
 
     def __get_2fa_code(self) -> str:
         """
@@ -263,14 +286,25 @@ def delete_user_session(session: UserSession) -> None:
         logging.warning("Attempting to delete session for %s, but session doesn't exist", username)
 
 
-def authenticate_all_sessions(show_browser = False) -> list[UserSession]:
+
+async def authenticate_all_sessions(show_browser = False) -> list[UserSession]:
     """
     Authenticate all user sessions.
     This method will iterate through all active sessions and authenticate them.
     :return: A list of authenticated sessions.
     """
     authenticated = []
-    for session in __active_sessions.values():
-        if session.authenticate(show_browser):
+    results = {}
+    async with TaskGroup() as group:
+        for session in __active_sessions.values():
+            # Create a task for each session
+            results[session] = group.create_task(session.authenticate(show_browser))
+
+    for session, task in results.items():
+        if task.result():
             authenticated.append(session)
+            logging.debug(f"Authenticated session for {session.get_config().username}")
+        else:
+            logging.error(f"Failed to authenticate session for {session.get_config().username}")
+
     return authenticated

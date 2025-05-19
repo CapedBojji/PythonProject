@@ -2,3 +2,6 @@
 /config/
 /O365_tokens/
 .env
+app.log
+dist
+build

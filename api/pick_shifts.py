@@ -1,13 +1,12 @@
 import logging
 import os
 import time
-from datetime import timedelta, datetime, timezone
+from asyncio import TaskGroup
+from datetime import datetime, timezone
 
-from app.models import ShiftBlockConfig
 from app.session import UserSession
 from utils.nanoid import nanoid
-from utils.session import log_response_error
-from utils.time import parse_str_to_time, split_time_block, time_block_in_blocks
+from utils.time import split_time_block, time_block_in_blocks
 
 __pick_shift_window = int(os.getenv("PICK_SHIFT_WINDOW", "300"))
 
@@ -18,7 +17,6 @@ def __can_pick_shift(session: UserSession) -> bool:
     :param session: The user session to check.
     :return: True if the user can pick a shift, False otherwise.
     """
-    # TODO: Fix this to not run if not withing the time window
     time_to_pick = session.get_config().pick_shift_api_config.time_to_pick.replace(tzinfo=session.get_config().pick_shift_api_config.time_zone)
     if time_to_pick is None:
         return True
@@ -29,7 +27,7 @@ def __can_pick_shift(session: UserSession) -> bool:
     return False
 
 
-def __get_shifts(session: UserSession, start_time: str, end_time: str) -> list:
+async def __get_shifts(session: UserSession, start_time: str, end_time: str) -> list:
     data = {
         "operationName": "FindShiftsPage",
         "query": r"""
@@ -83,17 +81,21 @@ query FindShiftsPage(
         "x-atoz-client-id": "SCHEDULE_MANAGEMENT_SERVICE",
         "x-atoz-client-request-id": nanoid()
     }
-    url = f"https://atoz-api-us-east-1.amazon.work/graphql?{session.get_employee_id()}"
-    response = session.get_session().post(url, headers=headers, json=data)
-    if log_response_error(response, "Failed to get shifts: %s", response.text):
+    url = f"https://atoz-api-us-east-1.amazon.work/graphql?{await session.get_employee_id()}"
+    response = await session.get_client().post(url, headers=headers, json=data)
+    if response.status_code != 200:
+        logging.error("Failed to get shifts: %s", response.text)
         return []
+
     data = response.json()
     if not __validate_response_data(data):
         logging.error("Invalid response data: %s", data)
         return []
+
     if __get_shift_count(data) == 0:
         logging.info("No shifts available")
         return []
+
     return __filter_out_ineligible_shifts(data["data"]["shiftOpportunities"]["opportunities"])
 
 
@@ -152,7 +154,7 @@ def __get_shift_time_block(shift: dict) -> tuple[datetime, datetime]:
     return start_time, end_time
 
 
-def __pick_shift(session: UserSession, shift: dict) -> bool:
+async def __pick_shift(session: UserSession, shift: dict) -> bool:
     """
     Pick the given shift.
     :param session: The user session to pick the shift for.
@@ -177,14 +179,18 @@ mutation AddShift($shiftOpportunityId: AddShiftInput!) {
         "x-atoz-client-id": "SCHEDULE_MANAGEMENT_SERVICE",
         "x-atoz-client-request-id": nanoid()
     }
-    url = f"https://atoz-api-us-east-1.amazon.work/graphql?{session.get_employee_id()}"
-    response = session.get_session().post(url, headers=headers, json=data)
-    if log_response_error(response, "Failed to pick shift: %s", response.text):
+    url = f"https://atoz-api-us-east-1.amazon.work/graphql?{await session.get_employee_id()}"
+
+    response = await session.get_client().post(url, headers=headers, json=data)
+    if response.status_code != 200:
+        logging.error("Failed to pick shift: %s", response.text)
         return False
+
     data = response.json()
     if not __validate_pick_shift_response(data, shift):
         logging.error("Invalid response data: %s", data)
         return False
+
     return True
 
 
@@ -197,18 +203,21 @@ def __validate_pick_shift_response(response: dict, shift: dict) -> bool:
     """
     if not "data" in response and not "addShift" in response["data"]:
         return False
+
     return response["data"]["addShift"] == shift["id"]
 
 
-def run(session: UserSession):
+async def run(session: UserSession):
     """
     Run the pick shift process for the given session.
     :param session: The user session to run the pick shift process for.
     """
     if not __can_pick_shift(session):
-        logging.info("Not time to pick shift yet")
+        logging.debug("Not time to pick shift yet")
         return
-    logging.info("Time to pick shift")
+
+    logging.debug("Time to pick shift")
+
     rules = session.get_config().pick_shift_api_config.rules
     # Convert rules to list tuple of datetime objects
     rules = [(rule.start, rule.end) for rule in rules]
@@ -220,20 +229,31 @@ def run(session: UserSession):
     max_end = max([rule[1] for rule in rules])
     # Split into time blocks of max 7 days
     time_blocks = split_time_block(min_start, max_end, 7)
+
     # Get the shifts for each time block
     all_shifts = []
-    for time_block in time_blocks:
-        start_time_str = time_block[0].astimezone(timezone.utc).isoformat()
-        end_time_str = time_block[1].astimezone(timezone.utc).isoformat()
-        shifts = __get_shifts(session, start_time_str, end_time_str)
-        all_shifts.extend(shifts)
+    results = []
+    async with TaskGroup() as group:
+        for time_block in time_blocks:
+            start_time_str = time_block[0].astimezone(timezone.utc).isoformat()
+            end_time_str = time_block[1].astimezone(timezone.utc).isoformat()
+            group.create_task(__get_shifts(session, start_time_str, end_time_str))
+    for result in results:
+        if result.status == "finished":
+            all_shifts.extend(result.result())
+        else:
+            logging.error("Failed to get shifts: %s", result.exception())
+
     # Remove duplicates
     all_shifts = {shift["id"]: shift for shift in all_shifts}.values()
+
     # Process each shift
-    for shift in all_shifts:
-        start_time, end_time = __get_shift_time_block(shift)
-        # Check if the shift is within any of the rules
-        if time_block_in_blocks((start_time, end_time), rules):
-            __pick_shift(session, shift)
-    else:
-        logging.info("No shifts available for the given rules")
+    async with TaskGroup() as group:
+        for shift in all_shifts:
+            start_time, end_time = __get_shift_time_block(shift)
+            # Check if the shift is within any of the rules
+            if time_block_in_blocks((start_time, end_time), rules):
+                group.create_task(__pick_shift(session, shift))
+        else:
+            logging.info("No shifts available for the given rules")
+

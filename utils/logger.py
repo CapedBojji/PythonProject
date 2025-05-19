@@ -26,3 +26,4 @@ def setup_logging(log_file: Path | None = None, level: int = logging.INFO) -> No
     handler.setFormatter(fmt)
     logger.addHandler(handler)
 
+

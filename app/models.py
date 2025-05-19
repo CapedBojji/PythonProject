@@ -25,6 +25,7 @@ class UserConfig:
     password: str
     two_factor_method: tuple[TwoFAMethod, str]
     pick_shift_api_config: Optional[PickShiftApiConfig]
+    priority: int = 0
 
 
 def obfuscate_2fa_method(string: str, method: TwoFAMethod) -> str:
