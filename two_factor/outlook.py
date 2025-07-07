@@ -4,8 +4,6 @@ import re
 from O365 import Account, FileSystemTokenBackend
 
 __active_accounts: dict[str, Account] = {}
-__client_id = os.getenv("O365_CLIENT_ID")
-__client_secret = os.getenv("O365_CLIENT_SECRET")
 __FOLDER_NAME = os.getenv("O365_FOLDER_NAME", "AtoZ")
 
 def authenticate(username: str) -> bool:
@@ -15,11 +13,15 @@ def authenticate(username: str) -> bool:
     :param username: The username to authenticate.
     :return: True if authentication is successful, False otherwise.
     """
+    __client_id = os.getenv("O365_CLIENT_ID")
+    __client_secret = os.getenv("O365_CLIENT_SECRET")
+
     if username in __active_accounts:
         account = __active_accounts[username]
         if account.is_authenticated:
             return True
     else:
+
         account = Account((__client_id, __client_secret), username=username, token_backend=FileSystemTokenBackend(token_path="O365_tokens", token_filename=f"{username}.token"))
         __active_accounts[username] = account
         if not account.is_authenticated:

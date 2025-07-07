@@ -14,6 +14,27 @@ def parse_str_to_time(string: str, timezone = timezone.utc) -> datetime:
     time, _ = cal.parse(string)
     return datetime(*time[:6], tzinfo=timezone)
 
+def parse_str_to_timedelta(string: str) -> timedelta:
+    """
+    Parse a string to a timedelta object.
+
+    :param string: The string to parse.
+    :return: A timedelta object.
+    """
+    if string == "max":
+        return timedelta.max
+    elif string == "min":
+        return timedelta.min
+    else:
+        time_parts = string.split(":")
+        if len(time_parts) == 3:
+            return timedelta(hours=int(time_parts[0]), minutes=int(time_parts[1]), seconds=int(time_parts[2]))
+        elif len(time_parts) == 2:
+            return timedelta(hours=int(time_parts[0]), minutes=int(time_parts[1]))
+        elif len(time_parts) == 1:
+            return timedelta(minutes=int(time_parts[0]))
+        else:
+            raise ValueError(f"Invalid time format: {string}")
 
 def split_time_block(start: datetime, end: datetime, offset: int) -> list[tuple[datetime, datetime]]:
     """

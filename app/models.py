@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import timezone, datetime
+from datetime import timezone, datetime, timedelta
 from enum import Enum
 from typing import TypedDict, Tuple, Optional, List
 from zoneinfo import ZoneInfo
@@ -7,6 +7,11 @@ from zoneinfo import ZoneInfo
 
 class TwoFAMethod(Enum):
     OUTLOOK = "OUTLOOK"
+
+class SkillType(Enum):
+    INBOUND = "Inbound"
+    SHIP_DOCK = "Ship Dock"
+    SORT = "Sort"
 
 @dataclass
 class ShiftBlockConfig:
@@ -18,6 +23,7 @@ class PickShiftApiConfig:
     time_to_pick: Optional[datetime]
     time_zone: Optional[ZoneInfo]
     rules: list[ShiftBlockConfig]
+    duration: timedelta = timedelta(hours=1)
 
 @dataclass
 class UserConfig:
@@ -26,6 +32,9 @@ class UserConfig:
     two_factor_method: tuple[TwoFAMethod, str]
     pick_shift_api_config: Optional[PickShiftApiConfig]
     priority: int = 0
+    skills: Optional[List[SkillType]] = None
+
+
 
 
 def obfuscate_2fa_method(string: str, method: TwoFAMethod) -> str:

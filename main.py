@@ -16,7 +16,6 @@ from utils.watcher import Watcher, load_config
 
 import dotenv
 
-dotenv.load_dotenv()
 def on_user_config_change(data: UserConfig) -> None:
     session = get_user_session(data)
     session.update_config(data)
@@ -31,13 +30,14 @@ def on_user_config_create(data: UserConfig) -> None:
     create_user_session(data)
 
 
-async def start(config_dir: Path, log_file: Path | None = None, debug: bool = False, show_browser=False) -> None:
+async def start(config_dir: Path, log_file: Path | None = None, debug: bool = False, show_browser=False, single_user=None) -> None:
     """
     Start the application with the given configuration directory.
     :param config_dir: The path to the configuration directory.
     :param log_file: The path to the log file. If None, logs will be printed to stdout.
     :param debug: Enable debug mode.
     :param show_browser: Show the browser window.
+    :param single_user: If provided, only this user's config will be used.
     """
     # Initialize the logger
     setup_logging(log_file, level=logging.DEBUG if debug else logging.INFO)
@@ -50,16 +50,15 @@ async def start(config_dir: Path, log_file: Path | None = None, debug: bool = Fa
     # Initialize the directory watcher
     watcher = Watcher(config_dir, on_user_config_change, on_user_config_create, on_user_config_delete)
     watcher.start()
-    logging.info("Watcher started")
     # Load existing user configurations
     load_existing_user_configs(config_dir)
     # Main loop to keep the application running
     try:
         while True:
-            time.sleep(10)
-            authenticated_sessions = await authenticate_all_sessions(show_browser)
-            authenticated_sessions.sort(key = lambda x: x.get_config().priority, reverse=True)
             try:
+                time.sleep(3)
+                authenticated_sessions = await authenticate_all_sessions(show_browser, single_user)
+                authenticated_sessions.sort(key = lambda x: x.get_config().priority, reverse=True)
                 async with TaskGroup() as group:
                     for session in authenticated_sessions:
                         group.create_task(pick_shifts.run(session))
@@ -97,6 +96,7 @@ def dir_path(path: str) -> Path:
 
 
 if __name__ == "__main__":
+    dotenv.load_dotenv()
     parser = argparse.ArgumentParser(
         prog="AtoZ Client",
         description="AtoZ Client is a command line tool for AtoZ.",
@@ -105,27 +105,38 @@ if __name__ == "__main__":
         "--config_dir",
         "-cd",
         type=dir_path,
-        required=True,
+        # required=True,
+        default=Path.cwd() / "config",
         help="Path to the configuration directory.",
     )
     parser.add_argument(
         "--show_browser",
         "-sb",
+        default=True,
         action="store_true",
         help="Show the browser window.",
+    )
+    parser.add_argument(
+        "--single_user",
+        "-su",
+        default=None,
+        type=str,
+        help="Run the application for a single user. If provided, only this user's config will be used.",
     )
     parser.add_argument(
         "--log_file",
         "-lf",
         type=Path,
-        default=None,
+        default=Path.cwd() / "app.log",
         help="Path to the log file. If not provided, logs will be printed to stdout.",
     )
     parser.add_argument(
         "--debug",
         "-d",
+        default=False,
         action="store_true",
         help="Enable debug mode.",
     )
     args = parser.parse_args()
-    asyncio.run(start(args.config_dir, args.log_file, args.debug, args.show_browser))
+    logging.debug(f"Running with arguments: {args}")
+    asyncio.run(start(args.config_dir, args.log_file, args.debug, args.show_browser, args.single_user))

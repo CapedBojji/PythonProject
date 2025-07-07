@@ -212,11 +212,11 @@ class UserSession:
                 break
         browser.find_element(By.ID, "buttonContinue").click()
         # Wait for the 2FA code input field to appear
-        time.sleep(10)
+        time.sleep(20)
         browser.find_element(By.ID, "code").send_keys(self.__get_2fa_code())
         browser.find_element(By.ID, "buttonVerifyIdentity").click()
         # Ensure that the login was successful
-        browser.wait_for_url(r"/shifts", timeout=30)
+        browser.wait_for_url(regex=r"/shifts|/home", timeout=45)
         # Get the cookies from the browser
         cookies = browser.get_cookies()
         # Stop the browser
@@ -287,7 +287,7 @@ def delete_user_session(session: UserSession) -> None:
 
 
 
-async def authenticate_all_sessions(show_browser = False) -> list[UserSession]:
+async def authenticate_all_sessions(show_browser = False, single_user = None) -> list[UserSession]:
     """
     Authenticate all user sessions.
     This method will iterate through all active sessions and authenticate them.
@@ -295,6 +295,17 @@ async def authenticate_all_sessions(show_browser = False) -> list[UserSession]:
     """
     authenticated = []
     results = {}
+    if single_user is not None and single_user in __active_sessions:
+        # If a single user is specified, only authenticate that user
+        session = __active_sessions[single_user]
+        results[session] = await session.authenticate(show_browser)
+        if results[session]:
+            authenticated.append(session)
+            logging.debug(f"Authenticated session for {session.get_config().username}")
+        else:
+            logging.error(f"Failed to authenticate session for {session.get_config().username}")
+        return authenticated
+
     async with TaskGroup() as group:
         for session in __active_sessions.values():
             # Create a task for each session

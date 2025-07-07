@@ -5,12 +5,13 @@ from zoneinfo import ZoneInfo
 
 import tomli
 from dacite import from_dict, Config
+from dacite.data import Data
 from watchdog.events import FileSystemEventHandler, FileSystemEvent, FileCreatedEvent, FileModifiedEvent, \
     FileDeletedEvent
 from watchdog.observers import Observer
 
 from app.models import UserConfig, TwoFAMethod
-from utils.time import parse_str_to_time, parse_str_to_time_zone
+from utils.time import parse_str_to_time, parse_str_to_time_zone, parse_str_to_timedelta
 
 
 class Watcher(FileSystemEventHandler):
@@ -31,7 +32,7 @@ class Watcher(FileSystemEventHandler):
                 # Check if file is a toml file
                 if not event.src_path.endswith(".toml"):
                     return
-                logging.debug("Config file created: %s", event.src_path)
+                logging.info("Config file created: %s", event.src_path)
                 # parse the toml into a user config
                 data = load_config(Path(event.src_path))
                 if data is None:
@@ -45,7 +46,7 @@ class Watcher(FileSystemEventHandler):
                 # Check if file is a toml file
                 if not event.src_path.endswith(".toml"):
                     return
-                logging.debug("Config file modified: %s", event.src_path)
+                logging.info("Config file modified: %s", event.src_path)
                 # parse the toml into a user config
                 data = load_config(Path(event.src_path))
                 if data is None:
@@ -59,7 +60,7 @@ class Watcher(FileSystemEventHandler):
                 # Check if file is a toml file
                 if not event.src_path.endswith(".toml"):
                     return
-                logging.debug("Config file deleted: %s", event.src_path)
+                logging.info("Config file deleted: %s", event.src_path)
                 # parse the toml into a user config
                 data = load_config(Path(event.src_path))
                 if data is None:
@@ -86,6 +87,7 @@ def load_config(path: Path) -> UserConfig or None:
         try:
             config = Config(type_hooks={tuple[TwoFAMethod, str]: lambda v: (TwoFAMethod(v[0]), v[1]),
                                         datetime.datetime: parse_str_to_time,
+                                        datetime.timedelta: parse_str_to_timedelta,
                                         ZoneInfo: parse_str_to_time_zone})
             data = from_dict(
                 data_class=UserConfig,

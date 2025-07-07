@@ -1,3 +1,4 @@
+import re
 import time
 
 from selenium.webdriver.common.by import By
@@ -96,15 +97,24 @@ class BrowserFirefox:
 
 
 
-    def wait_for_url(self, url: str, timeout=10):
+    def wait_for_url(self, url = None, regex = None, timeout=10):
         if not self.__started:
             raise RuntimeError("Browser is not started.")
-        found = WebDriverWait(self.driver, timeout).until(lambda d: url in d.current_url)
+        if not url and not regex:
+            raise ValueError("Either url or regex must be provided.")
+
+        if regex is None:
+            found = WebDriverWait(self.driver, timeout).until(lambda d: url in d.current_url)
+        else:
+            found = WebDriverWait(self.driver, timeout).until(lambda d: re.search(regex, d.current_url) is not None)
+
         while not found and timeout > 0:
             time.sleep(0.1)
             timeout -= 0.1
-        if not url:
-            raise RuntimeError(f"URL did not change to {url} within the timeout period.")
+            if regex is None:
+                found = WebDriverWait(self.driver, timeout).until(lambda d: url in d.current_url)
+            else:
+                found = WebDriverWait(self.driver, timeout).until(lambda d: re.search(regex, d.current_url) is not None)
 
     def wait_for_element(self, by, value, timeout=10):
         if not self.__started:
