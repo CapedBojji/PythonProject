@@ -31,6 +31,7 @@ class UserConfig:
     password: str
     two_factor_method: tuple[TwoFAMethod, str]
     pick_shift_api_config: Optional[PickShiftApiConfig]
+    reload_session_on: Optional[datetime]
     priority: int = 0
     skills: Optional[List[SkillType]] = None
 

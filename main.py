@@ -16,18 +16,18 @@ from utils.watcher import Watcher, load_config
 
 import dotenv
 
-def on_user_config_change(data: UserConfig) -> None:
-    session = get_user_session(data)
+def on_user_config_change(data: UserConfig, path: str) -> None:
+    session = get_user_session(data, Path(path))
     session.update_config(data)
 
 
-def on_user_config_delete(data: UserConfig) -> None:
-    session = get_user_session(data)
+def on_user_config_delete(data: UserConfig, path: str) -> None:
+    session = get_user_session(data, Path(path))
     delete_user_session(session)
 
 
-def on_user_config_create(data: UserConfig) -> None:
-    create_user_session(data)
+def on_user_config_create(data: UserConfig, path: str) -> None:
+    create_user_session(data, Path(path))
 
 
 async def start(config_dir: Path, log_file: Path | None = None, debug: bool = False, show_browser=False, single_user=None) -> None:
@@ -78,7 +78,7 @@ def load_existing_user_configs(config_dir: Path) -> None:
         logging.info(f"Loading existing config file: {config}")
         data = load_config(config)
         if data:
-            create_user_session(data)
+            create_user_session(data, config)
         else:
             logging.error("Error parsing config file: %s", config)
 

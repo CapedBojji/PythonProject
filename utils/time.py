@@ -104,3 +104,14 @@ def parse_str_to_time_zone(tz_str: str) -> ZoneInfo:
         return ZoneInfo(resolved)
     except Exception:
         raise ValueError(f"Unknown timezone: '{tz_str}' (resolved to '{resolved}')")
+
+def is_time(t: datetime, error_margin: timedelta = timedelta(minutes=5)) -> bool:
+    """
+    Check if the given time is within the error margin of the current time.
+
+    :param t: The time to check.
+    :param error_margin: The error margin to use.
+    :return: True if the time is within the error margin, False otherwise.
+    """
+    now = datetime.now(tz=timezone.utc)
+    return now - error_margin <= t <= now + error_margin

@@ -38,7 +38,7 @@ class Watcher(FileSystemEventHandler):
                 if data is None:
                     logging.error("Error parsing config file: %s", event.src_path)
                     return
-                self.__on_create(data)
+                self.__on_create(data, event.src_path)
 
     def on_modified(self, event: FileSystemEvent):
         if self.__on_change:
@@ -52,7 +52,7 @@ class Watcher(FileSystemEventHandler):
                 if data is None:
                     logging.error("Error parsing config file: %s", event.src_path)
                     return
-                self.__on_change(data)
+                self.__on_change(data, event.src_path)
 
     def on_deleted(self, event: FileSystemEvent):
         if self.__on_delete:
@@ -66,7 +66,7 @@ class Watcher(FileSystemEventHandler):
                 if data is None:
                     logging.error("Error parsing config file: %s", event.src_path)
                     return
-                self.__on_delete(data)
+                self.__on_delete(data, event.src_path)
 
     def start(self):
         self.__observer.schedule(self, self.__path, recursive=True)
@@ -94,6 +94,7 @@ def load_config(path: Path) -> UserConfig or None:
                 data=tomli.load(f),
                 config=config
             )
+
             return data
         except Exception as e:
             logging.error("Error parsing config file: %s", e)

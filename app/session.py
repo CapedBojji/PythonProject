@@ -1,8 +1,10 @@
 import asyncio
 import logging
+import pathlib
 import re
 import time
 from asyncio import TaskGroup
+from os import PathLike
 from typing import Optional
 
 import requests
@@ -13,6 +15,8 @@ from app.models import UserConfig, obfuscate_2fa_method, TwoFAMethod
 from two_factor.outlook import authenticate, get_2fa_code
 from utils.browser import BrowserFirefox, get_2fa_options
 from utils.session import create_httpx_async_client
+from utils.time import is_time
+from utils.watcher import load_config
 
 
 class UserSession:
@@ -245,10 +249,10 @@ class UserSession:
         else:
             raise ValueError(f"Unknown 2FA method type: {method}")
 
-__active_sessions: dict[str, UserSession] = {}
+__active_sessions: dict[str, tuple[UserSession, Optional[pathlib.Path]]] = {}
 
 
-def create_user_session(config: UserConfig) -> UserSession:
+def create_user_session(config: UserConfig, path: Optional[pathlib.Path]) -> UserSession:
     """
     Create a new user session for the given username.
     If the session already exists, return the existing one.
@@ -256,22 +260,22 @@ def create_user_session(config: UserConfig) -> UserSession:
     username = config.username
     if username in __active_sessions:
         logging.warn("User session already exists")
-        return __active_sessions[username]
+        return __active_sessions[username][0]
     else:
         logging.info(f"Creating new user session from config: {config}")
-        __active_sessions[username] = UserSession(config)
-        return __active_sessions[username]
+        __active_sessions[username] = (UserSession(config), path)
+        return __active_sessions[username][0]
 
 
-def get_user_session(config: UserConfig) -> UserSession:
+def get_user_session(config: UserConfig, path: Optional[pathlib.Path]) -> UserSession:
     """
     Get the user session for the given username.
     """
     username = config.username
     if username not in __active_sessions:
         logging.warn("Trying to get a user session that does not exist: %s. Creating...", username)
-        __active_sessions[username] = UserSession(config)
-    return __active_sessions[username]
+        create_user_session(config, path)
+    return __active_sessions[username][0]
 
 
 def delete_user_session(session: UserSession) -> None:
@@ -285,7 +289,21 @@ def delete_user_session(session: UserSession) -> None:
     else:
         logging.warning("Attempting to delete session for %s, but session doesn't exist", username)
 
-
+def reload_user_session(session: UserSession) -> None:
+    username = session.get_config().username
+    if username in __active_sessions:
+        # Get the path to the file
+        path = __active_sessions[username][1]
+        # Delete the session
+        delete_user_session(session)
+        # Create a new session with the same config
+        data = load_config(path)
+        if data is None:
+            logging.error(f"Failed to load config for user {username} from path {path}")
+            return
+        create_user_session(data, path)
+    else:
+        logging.warning("Attempting to reload session for %s, but session doesn't exist", username)
 
 async def authenticate_all_sessions(show_browser = False, single_user = None) -> list[UserSession]:
     """
@@ -296,18 +314,28 @@ async def authenticate_all_sessions(show_browser = False, single_user = None) ->
     authenticated = []
     results = {}
     if single_user is not None and single_user in __active_sessions:
+
         # If a single user is specified, only authenticate that user
-        session = __active_sessions[single_user]
+        session = __active_sessions[single_user][0]
+        # Check to see if session needs to be reloaded
+        if session.get_config().reload_session_on is not None and is_time(session.get_config().reload_session_on):
+            reload_user_session(session)
         results[session] = await session.authenticate(show_browser)
         if results[session]:
             authenticated.append(session)
             logging.debug(f"Authenticated session for {session.get_config().username}")
         else:
             logging.error(f"Failed to authenticate session for {session.get_config().username}")
+
         return authenticated
 
+    for username, (session, _) in __active_sessions.items():
+        # Check to see if session needs to be reloaded
+        if session.get_config().reload_session_on is not None and is_time(session.get_config().reload_session_on):
+            reload_user_session(session)
+
     async with TaskGroup() as group:
-        for session in __active_sessions.values():
+        for (session, _) in __active_sessions.values():
             # Create a task for each session
             results[session] = group.create_task(session.authenticate(show_browser))
 
