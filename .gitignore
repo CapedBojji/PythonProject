@@ -5,3 +5,4 @@
 app.log
 dist
 build
+.devenv
