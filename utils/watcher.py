@@ -77,7 +77,7 @@ class Watcher(FileSystemEventHandler):
         self.__observer.join()
 
 
-def load_config(path: Path) -> UserConfig or None:
+def load_config(path: Path) -> UserConfig | None:
     """
     Load a config file and return a UserConfig object.
     :param path: The path to the config file.

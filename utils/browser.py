@@ -1,5 +1,7 @@
 import re
 import time
+import shutil
+import os
 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
@@ -45,20 +47,57 @@ class ElementActions:
         return ElementActions(found_element)
 
 class BrowserFirefox:
-    def __init__(self, binary_path=None, options=None, headless=True):
+    def __init__(self, options=None, headless=True):
         self.__started = False
-        self.binary_path = binary_path
+        self.gecko_driver_path = self._find_gecko_driver()
         self.options = options or FirefoxOptions()
         if headless:
             self.options.add_argument("--headless")
         self.driver = None
 
+    def _find_gecko_driver(self):
+        """
+        Find GeckoDriver in the following order:
+        1. Environment variable GECKODRIVER_PATH
+        2. Check if geckodriver is in PATH
+        3. Use webdriver-manager for automatic download
+        4. Return None to let Selenium handle it
+        """
+        # Check environment variable first
+        env_path = os.getenv('GECKODRIVER_PATH')
+        if env_path and os.path.isfile(env_path):
+            return env_path
+        
+        # Check if geckodriver is in PATH
+        gecko_path = shutil.which('geckodriver')
+        if gecko_path:
+            return gecko_path
+        
+        # Try webdriver-manager as fallback
+        try:
+            from webdriver_manager.firefox import GeckoDriverManager
+            return GeckoDriverManager().install()
+        except ImportError:
+            # webdriver-manager not available, let Selenium handle it
+            pass
+        
+        # Let Selenium's built-in driver manager handle it
+        return None
+
     def start(self):
         if self.__started:
             raise RuntimeError("Browser is already running.")
         self.__started = True
-        self.options.binary_location = self.binary_path
-        self.driver = webdriver.Firefox(options=self.options)
+        
+        # Create Firefox driver with or without explicit GeckoDriver path
+        if self.gecko_driver_path:
+            from selenium.webdriver.firefox.service import Service
+            service = Service(executable_path=self.gecko_driver_path)
+            self.driver = webdriver.Firefox(service=service, options=self.options)
+        else:
+            # Let Selenium find GeckoDriver automatically
+            self.driver = webdriver.Firefox(options=self.options)
+        
         self.__started = True
 
     def stop(self):
@@ -148,10 +187,14 @@ def get_2fa_options(browser: BrowserFirefox) -> list[tuple[str, ElementActions]]
         values.append((label.get_text(), label))
     return values
 
+
 if __name__ == "__main__":
-    options = FirefoxOptions()
-    options.add_argument("--headless")
-    browser = BrowserFirefox(binary_path=r"C:\Users\Floch\Downloads\geckodriver\geckodriver.exe", options=options)
+    # Example usage with the new convenience function
+    browser = BrowserFirefox(headless=True)
+
+    print(f"GeckoDriver path: {browser.gecko_driver_path}")
+    
     browser.start()
-    browser.get_url("https://atoz-login.amazon.work/")
+    browser.get_url("https://httpbin.org/html")
+    print("✅ Successfully loaded test page!")
     browser.stop()

@@ -6,3 +6,6 @@ app.log
 dist
 build
 .devenv
+*.pyc
+__pycache__/
+.DS_Store

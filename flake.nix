@@ -32,10 +32,16 @@
               modules = [
                 {
                   # https://devenv.sh/reference/options/
-                  packages = [ pkgs.hello ];
+                  packages = [ 
+                    pkgs.hello 
+                    pkgs.geckodriver 
+                    pkgs.firefox
+                  ];
 
                   enterShell = ''
                     hello
+                    echo "GeckoDriver available at: $(which geckodriver)"
+                    echo "Firefox available at: $(which firefox)"
                   '';
 
                   processes.hello.exec = "hello";

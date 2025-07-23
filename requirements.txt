@@ -9,6 +9,7 @@ dacite
 
 # Web scraping and browser automation
 selenium
+webdriver-manager
 
 # HTTP clients
 httpx

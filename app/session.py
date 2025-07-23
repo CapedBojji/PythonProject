@@ -92,7 +92,7 @@ class UserSession:
         elif self.__is_session_valid() and self.__is_session_expired():
             return await self.__re_authenticate()
         else:
-            browser = BrowserFirefox(binary_path=r"C:\Users\Floch\Downloads\geckodriver\geckodriver.exe", headless=not show_browser)
+            browser = BrowserFirefox(headless=not show_browser)
             # Perform the login process
             try:
                 cookies = await asyncio.to_thread(self.__login, browser)
