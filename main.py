@@ -75,7 +75,7 @@ async def start(config_dir: Path, log_file: Path | None = None, debug: bool = Fa
 def load_existing_user_configs(config_dir: Path) -> None:
     configs = config_dir.rglob("*.toml")
     for config in configs:
-        logging.info(f"Loading existing config file: {config}")
+        logging.debug(f"Loading existing config file: {config}")
         data = load_config(config)
         if data:
             create_user_session(data, config)

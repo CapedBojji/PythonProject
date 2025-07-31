@@ -32,7 +32,7 @@ class Watcher(FileSystemEventHandler):
                 # Check if file is a toml file
                 if not event.src_path.endswith(".toml"):
                     return
-                logging.info("Config file created: %s", event.src_path)
+                logging.debug("Config file created: %s", event.src_path)
                 # parse the toml into a user config
                 data = load_config(Path(event.src_path))
                 if data is None:
@@ -46,7 +46,7 @@ class Watcher(FileSystemEventHandler):
                 # Check if file is a toml file
                 if not event.src_path.endswith(".toml"):
                     return
-                logging.info("Config file modified: %s", event.src_path)
+                logging.debug("Config file modified: %s", event.src_path)
                 # parse the toml into a user config
                 data = load_config(Path(event.src_path))
                 if data is None:
@@ -60,7 +60,7 @@ class Watcher(FileSystemEventHandler):
                 # Check if file is a toml file
                 if not event.src_path.endswith(".toml"):
                     return
-                logging.info("Config file deleted: %s", event.src_path)
+                logging.debug("Config file deleted: %s", event.src_path)
                 # parse the toml into a user config
                 data = load_config(Path(event.src_path))
                 if data is None:

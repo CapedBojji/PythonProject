@@ -25,7 +25,7 @@ def setup_logging(log_file: Path | None = None, level: int = logging.INFO) -> No
     # Choose handler: FileHandler if path given, else StreamHandler(sys.stdout)
     if log_file:
         handler = logging.FileHandler(log_file, encoding="utf-8")
-        handler.setLevel(logging.INFO)
+        handler.setLevel(level)
         handler.setFormatter(fmt)
         logger.addHandler(handler)
 

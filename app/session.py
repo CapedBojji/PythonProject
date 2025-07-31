@@ -142,7 +142,7 @@ class UserSession:
         if response.status_code != 200:
             logging.error(f"Failed to logout: {response.status_code} - {response.text}")
 
-        logging.info(f"Logged out user session {self}")
+        logging.debug(f"Logged out user session {self}")
 
     def __str__(self) -> str:
         """
@@ -262,7 +262,7 @@ def create_user_session(config: UserConfig, path: Optional[pathlib.Path]) -> Use
         logging.warn("User session already exists")
         return __active_sessions[username][0]
     else:
-        logging.info(f"Creating new user session from config: {config}")
+        logging.debug(f"Creating new user session from config: {config}")
         __active_sessions[username] = (UserSession(config), path)
         return __active_sessions[username][0]
 
@@ -285,7 +285,7 @@ def delete_user_session(session: UserSession) -> None:
     username = session.get_config().username
     if username in __active_sessions:
         del __active_sessions[username]
-        logging.info("Deleted user session for %s", username)
+        logging.debug("Deleted user session for %s", username)
     else:
         logging.warning("Attempting to delete session for %s, but session doesn't exist", username)
 

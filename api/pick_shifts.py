@@ -99,7 +99,7 @@ query FindShiftsPage(
             return []
 
         if __get_shift_count(response_data) == 0:
-            logging.info(f"No shifts available for {start_time} to {end_time}")
+            logging.debug(f"No shifts available for {start_time} to {end_time}")
             return []
 
         return __filter_out_ineligible_shifts(response_data["data"]["shiftOpportunities"]["opportunities"])
@@ -147,7 +147,7 @@ def __filter_out_ineligible_shifts(shifts: list) -> list:
         if shift["eligibility"]["isEligible"] and not shift["unavailability"]:
             eligible_shifts.append(shift)
         else:
-            logging.info("Shift is not eligible: %s", shift)
+            logging.debug("Shift is not eligible: %s", shift)
     return eligible_shifts
 
 
@@ -263,6 +263,6 @@ async def run(session: UserSession):
             start_time, end_time = __get_shift_time_block(shift)
             # Check if the shift is within any of the rules
             if time_block_in_blocks((start_time, end_time), rules):
-                logging.info(f"Picking shift: {shift}")
+                logging.debug(f"Picking shift: {shift}")
                 group.create_task(__pick_shift(session, shift))
 
